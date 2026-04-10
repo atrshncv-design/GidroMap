@@ -1,23 +1,34 @@
 # GidroMap
 
-This repository contains the current hydroisohypse map editor application from the delivered archive.
+Каноничная версия редактора карты гидроизогипс.
 
-## What is in this repository
-- Next.js application in the repository root
-- main editor page in `src/app/page.tsx`
-- map reference image in `public/map-reference.png`
-- UI components and helper modules in `src/components`, `src/hooks`, and `src/lib`
+Этот репозиторий должен содержать именно текущую версию приложения, чтобы при `git clone`/скачивании архива загружалась именно эта карта и этот набор функций.
 
-## Canonical version
-- The canonical application for this repository is the root Next.js project.
-- This repository is intended to publish and download this exact map-editor version.
+## Что входит в текущую версию
 
-## Local run
+- Интерактивный редактор карты гидроизогипс (Next.js, корень репозитория)
+- Импорт скана карты (PNG/JPG/WEBP и др.) прямо в интерфейсе
+- Ввод высот по выбранной точке вручную
+- Пакетный импорт высот точек из CSV/TXT/JSON
+- Построение изолиний (коричневый цвет), заливки и стрелок направления стока
+
+## Ключевые файлы версии
+
+- `src/app/page.tsx` — основная логика редактора и всех инструментов
+- `public/map-reference.png` — базовая подложка карты по умолчанию
+- `package.json` — скрипты сборки/запуска для Node.js
+
+## Локальный запуск
+
 ```bash
 npm install
 npm run dev
 ```
 
-## Notes
-- Local-only artifacts from the archive (for example `upload/`, `.env`, and runtime logs) are intentionally excluded from this repository.
-- If someone opens or downloads this repository, they should receive this exact hydroisohypse map editor version.
+Открыть: `http://localhost:3000`
+
+## Важно для публикации
+
+- Деплой выполнять из корня репозитория
+- Не заменять текущую карту/логику на другую версию без нового осознанного обновления
+- Локальные временные файлы и артефакты не включать в Git

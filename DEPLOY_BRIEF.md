@@ -3,34 +3,45 @@
 ## 1. Project purpose
 
 Interactive hydroisohypse map editor with:
-- manual point placement
-- contour visualization
-- filtration direction arrows
-- export of rendered result
+- map scan import in UI
+- manual height entry per selected point
+- bulk import of point heights from CSV/TXT/JSON
+- contour rendering (brown), fill zones, and groundwater flow arrows
 
 ## 2. Canonical files
 
-Main application:
+Primary app logic:
 - `src/app/page.tsx`
 
-Core static reference:
+Default map underlay:
 - `public/map-reference.png`
+
+Runtime/build configuration:
+- `package.json`
+- `.zscripts/build.sh`
+- `.zscripts/start.sh`
 
 ## 3. Deployment requirements
 
-This is a standard Next.js app.
-
-Required behavior:
-1. Deploy from repository root.
-2. Build and run the current app version as-is.
-3. Keep `public/map-reference.png` available at runtime.
+Deploy from repository root and keep this exact behavior:
+1. Build command: `npm run build`
+2. Runtime command: `npm run start`
+3. Keep `public/map-reference.png` available at runtime
+4. Keep import tools available in UI (scan import + heights import)
 
 ## 4. Local verification
 
 1. Run `npm install`
-2. Run `npm run dev`
-3. Open the app and verify that the hydroisohypse editor renders and the reference map is visible.
+2. Run `npm run build`
+3. Run `npm run dev`
+4. Open `http://localhost:3000` and verify:
+   - map editor opens
+   - scan import button works
+   - manual point data save works
+   - bulk heights import works
+   - contour lines are brown
 
 ## 5. Publishing note
 
-This repository should always represent this archive-based map-editor version unless explicitly updated with a newer archive.
+`main` must always point to this current map editor version.  
+If a newer archive is imported in the future, update files and docs in one commit so repository downloads always match the intended map version.

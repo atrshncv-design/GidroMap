@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { MapPin, Move, Trash2, Download, Check, Waves, Square, ArrowDownRight } from 'lucide-react'
+import { MapPin, Move, Trash2, Download, Check, Waves, Square, ArrowDownRight, Upload, FileUp } from 'lucide-react'
 
 // Данные для варианта 10
 const variant10Data = {
@@ -48,6 +48,166 @@ interface BoundaryPoint {
 
 type ExclusionZone = BoundaryPoint[]
 
+interface HeightImportRow {
+  pointType?: Point['type']
+  id?: number
+  label?: string
+  waterLevel: number
+  absMouth?: number
+  depth?: number
+}
+
+function parseDecimal(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().replace(',', '.')
+  if (!normalized) return undefined
+  const num = Number(normalized)
+  return Number.isFinite(num) ? num : undefined
+}
+
+function normalizePointType(raw: unknown): Point['type'] | undefined {
+  if (typeof raw !== 'string') return undefined
+  const value = raw.trim().toLowerCase()
+  if (!value) return undefined
+  if (['borehole', 'скв', 'скв.', 'скважина', 'well'].includes(value)) return 'borehole'
+  if (['shaft', 'шурф', 'shurf'].includes(value)) return 'shaft'
+  if (['custom', 'точка', 'point'].includes(value)) return 'custom'
+  return undefined
+}
+
+function isSamePoint(a: Point, b: Point): boolean {
+  return a.type === b.type && a.id === b.id && a.label === b.label
+}
+
+function pointMatchesImportRow(point: Point, row: HeightImportRow): boolean {
+  if (row.label) return point.label.trim().toLowerCase() === row.label.trim().toLowerCase()
+  if (row.id === undefined) return false
+  if (row.pointType) return point.type === row.pointType && point.id === row.id
+  return point.id === row.id
+}
+
+function parseHeightImport(raw: string): { rows: HeightImportRow[]; errors: string[] } {
+  const rows: HeightImportRow[] = []
+  const errors: string[] = []
+  const trimmed = raw.trim()
+
+  if (!trimmed) return { rows, errors: ['Пустой ввод для импорта.'] }
+
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      const items = Array.isArray(parsed)
+        ? parsed
+        : (parsed && typeof parsed === 'object' && Array.isArray((parsed as { points?: unknown[] }).points))
+          ? (parsed as { points: unknown[] }).points
+          : null
+
+      if (!items) return { rows, errors: ['JSON должен быть массивом или объектом с полем points[].'] }
+
+      items.forEach((item, index) => {
+        if (!item || typeof item !== 'object') {
+          errors.push(`Строка ${index + 1}: некорректный объект.`)
+          return
+        }
+        const rowObj = item as Record<string, unknown>
+        const waterLevel = parseDecimal(rowObj.waterLevel ?? rowObj.level ?? rowObj.height ?? rowObj.value)
+        if (waterLevel === undefined) {
+          errors.push(`Строка ${index + 1}: не найдено поле высоты (waterLevel/level/height/value).`)
+          return
+        }
+
+        const id = parseDecimal(rowObj.id)
+        const label = typeof rowObj.label === 'string' ? rowObj.label.trim() : undefined
+        const pointType = normalizePointType(rowObj.type)
+        if (id === undefined && !label) {
+          errors.push(`Строка ${index + 1}: нужен id или label.`)
+          return
+        }
+
+        rows.push({
+          pointType,
+          id,
+          label,
+          waterLevel,
+          absMouth: parseDecimal(rowObj.absMouth),
+          depth: parseDecimal(rowObj.depth),
+        })
+      })
+
+      return { rows, errors }
+    } catch {
+      return { rows, errors: ['Некорректный JSON для импорта списка точек.'] }
+    }
+  }
+
+  const lines = trimmed
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#') && !line.startsWith('//'))
+
+  if (lines.length === 0) return { rows, errors: ['Не найдено строк с данными.'] }
+
+  const headerPattern = /id|type|тип|water|level|уров|height|label|метк/i
+  const dataLines = headerPattern.test(lines[0]) ? lines.slice(1) : lines
+
+  dataLines.forEach((line, index) => {
+    const delimiter = line.includes(';') ? ';' : line.includes('\t') ? '\t' : ','
+    const parts = line.split(delimiter).map(part => part.trim())
+
+    if (parts.length < 2) {
+      errors.push(`Строка ${index + 1}: недостаточно колонок.`)
+      return
+    }
+
+    let pointType: Point['type'] | undefined
+    let id: number | undefined
+    let label: string | undefined
+    let waterLevel: number | undefined
+    let absMouth: number | undefined
+    let depth: number | undefined
+
+    const firstAsType = normalizePointType(parts[0])
+    const firstAsId = parseDecimal(parts[0])
+
+    if (firstAsType) {
+      pointType = firstAsType
+      id = parseDecimal(parts[1])
+      waterLevel = parseDecimal(parts[2])
+      absMouth = parseDecimal(parts[3])
+      depth = parseDecimal(parts[4])
+      label = parts[5] || undefined
+    } else if (firstAsId !== undefined) {
+      id = firstAsId
+      waterLevel = parseDecimal(parts[1])
+      absMouth = parseDecimal(parts[2])
+      depth = parseDecimal(parts[3])
+      pointType = normalizePointType(parts[4])
+      label = parts[5] || undefined
+    } else {
+      label = parts[0] || undefined
+      waterLevel = parseDecimal(parts[1])
+      pointType = normalizePointType(parts[2])
+      id = parseDecimal(parts[3])
+      absMouth = parseDecimal(parts[4])
+      depth = parseDecimal(parts[5])
+    }
+
+    if (waterLevel === undefined) {
+      errors.push(`Строка ${index + 1}: не удалось прочитать высоту.`)
+      return
+    }
+    if (id === undefined && !label) {
+      errors.push(`Строка ${index + 1}: нужен id или label.`)
+      return
+    }
+
+    rows.push({ pointType, id, label, waterLevel, absMouth, depth })
+  })
+
+  return { rows, errors }
+}
+
 // Цвета для заливки по уровням
 function getLevelColor(level: number, minLevel: number, maxLevel: number): string {
   // Нормализуем уровень от 0 до 1
@@ -59,9 +219,9 @@ function getLevelColor(level: number, minLevel: number, maxLevel: number): strin
   return `hsl(${hue}, 70%, 60%)`
 }
 
-// Цвет для изолиний (красный)
-function getContourColor(level: number): string {
-  return '#dc2626' // Красный цвет для всех изолиний
+// Цвет для изолиний (коричневый)
+function getContourColor(_level: number): string {
+  return '#8b5a2b'
 }
 
 // Проверка, находится ли точка внутри полигона
@@ -423,6 +583,8 @@ function getInitialId(type: 'borehole' | 'shaft'): number {
 export default function MapEditor() {
   const containerRef = useRef<HTMLDivElement>(null)
   const imageWrapperRef = useRef<HTMLDivElement>(null)
+  const mapScanInputRef = useRef<HTMLInputElement>(null)
+  const heightsInputRef = useRef<HTMLInputElement>(null)
   const [points, setPoints] = useState<Point[]>(getInitialPoints)
   const [boundary, setBoundary] = useState<BoundaryPoint[]>(getInitialBoundary)
   const [exclusionZones, setExclusionZones] = useState<ExclusionZone[]>(getInitialExclusionZones)
@@ -437,10 +599,38 @@ export default function MapEditor() {
   const [showFill, setShowFill] = useState(true)
   const [showArrows, setShowArrows] = useState(true)
   const [contourInterval, setContourInterval] = useState(1)
+  const [mapImageSrc, setMapImageSrc] = useState('/map-reference.png')
+  const [mapImageName, setMapImageName] = useState('map-reference.png')
+  const [manualWaterLevel, setManualWaterLevel] = useState('')
+  const [manualAbsMouth, setManualAbsMouth] = useState('')
+  const [manualDepth, setManualDepth] = useState('')
+  const [manualEditStatus, setManualEditStatus] = useState('')
+  const [bulkHeightsText, setBulkHeightsText] = useState('')
+  const [bulkImportStatus, setBulkImportStatus] = useState('')
 
   useEffect(() => { localStorage.setItem('mapPoints', JSON.stringify(points)) }, [points])
   useEffect(() => { localStorage.setItem('mapBoundary', JSON.stringify(boundary)) }, [boundary])
   useEffect(() => { localStorage.setItem('exclusionZones', JSON.stringify(exclusionZones)) }, [exclusionZones])
+  useEffect(() => {
+    if (!selectedPoint) return
+    const freshPoint = points.find(point => isSamePoint(point, selectedPoint))
+    if (!freshPoint) {
+      setSelectedPoint(null)
+      return
+    }
+    if (freshPoint !== selectedPoint) setSelectedPoint(freshPoint)
+  }, [points, selectedPoint])
+  useEffect(() => {
+    if (!selectedPoint) {
+      setManualWaterLevel('')
+      setManualAbsMouth('')
+      setManualDepth('')
+      return
+    }
+    setManualWaterLevel(selectedPoint.waterLevel?.toString() ?? '')
+    setManualAbsMouth(selectedPoint.absMouth?.toString() ?? '')
+    setManualDepth(selectedPoint.depth?.toString() ?? '')
+  }, [selectedPoint])
 
   const updateFromVariant10 = () => {
     setPoints(points.map(point => {
@@ -456,6 +646,31 @@ export default function MapEditor() {
   }
 
   const handleImageLoad = () => setImageLoaded(true)
+
+  const handleMapScanImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      alert('Выберите файл изображения (PNG, JPG, WEBP и т.д.).')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return
+      setMapImageSrc(reader.result)
+      setMapImageName(file.name)
+      setImageLoaded(false)
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  const resetMapScan = () => {
+    setMapImageSrc('/map-reference.png')
+    setMapImageName('map-reference.png')
+    setImageLoaded(false)
+  }
 
   const getCoords = (e: React.MouseEvent<HTMLDivElement>) => {
     const img = imageWrapperRef.current
@@ -487,8 +702,8 @@ export default function MapEditor() {
     } else if (mode === 'delete') {
       const clicked = points.find(p => Math.abs(p.x - coords.x) < 2 && Math.abs(p.y - coords.y) < 2)
       if (clicked) {
-        setPoints(points.filter(p => p !== clicked))
-        if (selectedPoint === clicked) setSelectedPoint(null)
+        setPoints(points.filter(p => !isSamePoint(p, clicked)))
+        if (selectedPoint && isSamePoint(selectedPoint, clicked)) setSelectedPoint(null)
       }
     }
   }
@@ -498,7 +713,7 @@ export default function MapEditor() {
     setSelectedPoint(point)
     if (mode === 'move') setDraggingPoint(point)
     else if (mode === 'delete') {
-      setPoints(points.filter(p => p !== point))
+      setPoints(points.filter(p => !isSamePoint(p, point)))
       setSelectedPoint(null)
     }
   }
@@ -507,9 +722,12 @@ export default function MapEditor() {
     if (!draggingPoint) return
     const coords = getCoords(e)
     if (!coords) return
+    const nextX = Math.max(0, Math.min(100, coords.x))
+    const nextY = Math.max(0, Math.min(100, coords.y))
     setPoints(points.map(p => 
-      p === draggingPoint ? { ...p, x: Math.max(0, Math.min(100, coords.x)), y: Math.max(0, Math.min(100, coords.y)) } : p
+      isSamePoint(p, draggingPoint) ? { ...p, x: nextX, y: nextY } : p
     ))
+    setDraggingPoint({ ...draggingPoint, x: nextX, y: nextY })
   }
 
   const handleMouseUp = () => setDraggingPoint(null)
@@ -545,6 +763,88 @@ export default function MapEditor() {
 
   const addCustomPoint = (type: 'pointA' | 'pointB') => {
     setPoints([...points, { id: type === 'pointA' ? 0 : 1, type: 'custom', x: 50, y: 50, label: type === 'pointA' ? 'А' : 'Б' }])
+  }
+
+  const applySelectedPointLevels = () => {
+    if (!selectedPoint) return
+
+    const waterLevel = manualWaterLevel.trim() === '' ? undefined : parseDecimal(manualWaterLevel)
+    const absMouth = manualAbsMouth.trim() === '' ? undefined : parseDecimal(manualAbsMouth)
+    const depth = manualDepth.trim() === '' ? undefined : parseDecimal(manualDepth)
+
+    if (manualWaterLevel.trim() !== '' && waterLevel === undefined) {
+      setManualEditStatus('Ошибка: высота уровня задана некорректно.')
+      return
+    }
+    if (manualAbsMouth.trim() !== '' && absMouth === undefined) {
+      setManualEditStatus('Ошибка: абсолютная отметка устья задана некорректно.')
+      return
+    }
+    if (manualDepth.trim() !== '' && depth === undefined) {
+      setManualEditStatus('Ошибка: глубина задана некорректно.')
+      return
+    }
+
+    setPoints(points.map(point => (
+      isSamePoint(point, selectedPoint)
+        ? { ...point, waterLevel, absMouth, depth }
+        : point
+    )))
+    setManualEditStatus(`Данные точки "${selectedPoint.label}" обновлены.`)
+  }
+
+  const applyHeightRows = (rawText: string) => {
+    const { rows, errors } = parseHeightImport(rawText)
+    if (rows.length === 0) {
+      setBulkImportStatus(errors.join(' '))
+      return
+    }
+
+    const nextPoints = [...points]
+    let updated = 0
+    let notFound = 0
+    let ambiguous = 0
+
+    for (const row of rows) {
+      const matchedPoints = nextPoints.filter(point => pointMatchesImportRow(point, row))
+      if (matchedPoints.length === 1) {
+        const targetPoint = matchedPoints[0]
+        const index = nextPoints.findIndex(point => isSamePoint(point, targetPoint))
+        if (index >= 0) {
+          nextPoints[index] = {
+            ...nextPoints[index],
+            waterLevel: row.waterLevel,
+            absMouth: row.absMouth ?? nextPoints[index].absMouth,
+            depth: row.depth ?? nextPoints[index].depth,
+          }
+          updated += 1
+        }
+      } else if (matchedPoints.length === 0) {
+        notFound += 1
+      } else {
+        ambiguous += 1
+      }
+    }
+
+    setPoints(nextPoints)
+    const problems = [...errors]
+    if (notFound > 0) problems.push(`Не найдено: ${notFound}.`)
+    if (ambiguous > 0) problems.push(`Неоднозначно (дубли id без type): ${ambiguous}.`)
+    setBulkImportStatus(`Импортировано: ${updated}/${rows.length}. ${problems.join(' ')}`.trim())
+  }
+
+  const handleHeightsFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      setBulkHeightsText(text)
+      applyHeightRows(text)
+    } catch {
+      setBulkImportStatus('Не удалось прочитать файл импорта.')
+    } finally {
+      e.target.value = ''
+    }
   }
 
   // Расчёт данных
@@ -624,7 +924,20 @@ export default function MapEditor() {
                   <Button variant="outline" size="sm" onClick={exportCoordinates}>
                     <Download className="h-4 w-4 mr-1" /> Экспорт
                   </Button>
+                  <Button variant="outline" size="sm" onClick={() => mapScanInputRef.current?.click()}>
+                    <Upload className="h-4 w-4 mr-1" /> Импорт скана
+                  </Button>
+                  {mapImageSrc !== '/map-reference.png' && (
+                    <Button variant="outline" size="sm" onClick={resetMapScan}>Базовая карта</Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={clearAll}>Очистить</Button>
+                  <input
+                    ref={mapScanInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleMapScanImport}
+                  />
                 </div>
 
                 {/* Display Controls */}
@@ -638,7 +951,7 @@ export default function MapEditor() {
                   <div className="flex items-center space-x-2">
                     <Switch id="showContours" checked={showContours} onCheckedChange={setShowContours} />
                     <Label htmlFor="showContours" className="flex items-center gap-1 cursor-pointer">
-                      <Waves className="h-4 w-4 text-blue-600" /> Изолинии
+                      <Waves className="h-4 w-4 text-amber-800" /> Изолинии
                     </Label>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -656,6 +969,7 @@ export default function MapEditor() {
                     </select>
                   </div>
                   {contours.length > 0 && <Badge variant="secondary">{contours.length} изолиний</Badge>}
+                  <Badge variant="outline" className="max-w-[230px] truncate">Скан: {mapImageName}</Badge>
                   {boundary.length > 0 && (
                     <>
                       <Badge variant="outline" className="border-red-500 text-red-600">Граница: {boundary.length} т.</Badge>
@@ -686,7 +1000,7 @@ export default function MapEditor() {
                 <div ref={containerRef} className="relative border-2 border-slate-300 rounded-lg overflow-auto cursor-crosshair bg-white"
                   style={{ maxHeight: '65vh' }} onClick={handleMapClick} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
                   <div ref={imageWrapperRef} className="map-image-container relative inline-block min-w-full">
-                    <img src="/map-reference.png" alt="Карта" className="block max-w-none pointer-events-none"
+                    <img src={mapImageSrc} alt={`Карта (${mapImageName})`} className="block max-w-none pointer-events-none"
                       style={{ width: '100%', minWidth: '800px', maxWidth: '1200px' }} onLoad={handleImageLoad} draggable={false} />
 
                     {imageLoaded && (
@@ -753,7 +1067,7 @@ export default function MapEditor() {
 
                     {/* Points */}
                     {imageLoaded && points.map((point) => {
-                      const isSelected = selectedPoint === point
+                      const isSelected = selectedPoint ? isSamePoint(selectedPoint, point) : false
                       return (
                         <div key={`${point.type}-${point.id}`}
                           className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer ${isSelected ? 'ring-2 ring-yellow-400 rounded-full' : ''}`}
@@ -793,10 +1107,11 @@ export default function MapEditor() {
                 <div className="mt-4 text-sm text-slate-600 bg-blue-50 p-3 rounded-lg">
                   <strong>Инструкция:</strong>
                   <ol className="list-decimal list-inside mt-2 space-y-1">
-                    <li><strong>Граница:</strong> Кликните по углам карты для создания внешней рамки расчёта</li>
-                    <li><strong>Исключение:</strong> Нарисуйте зоны внутри карты, где нет данных (изолинии там не строятся)</li>
+                    <li><strong>Импорт скана:</strong> в панели инструментов загрузите своё изображение карты</li>
+                    <li><strong>Граница:</strong> кликните по углам карты для создания внешней рамки расчёта</li>
+                    <li><strong>Исключение:</strong> нарисуйте зоны внутри карты, где нет данных (изолинии там не строятся)</li>
                     <li>Расставьте скважины и шурфы на карте</li>
-                    <li>Нажмите "Данные" для загрузки уровней воды</li>
+                    <li><strong>Ввод высот:</strong> вручную в карточке точки или пакетно через импорт списка</li>
                     <li><strong>Красные стрелки</strong> показывают направление стока подземных вод</li>
                   </ol>
                   <div className="mt-2 flex gap-4">
@@ -845,7 +1160,7 @@ export default function MapEditor() {
               <Card className="shadow-lg">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <Waves className="h-5 w-5 text-blue-600" /> Изолинии
+                    <Waves className="h-5 w-5 text-amber-800" /> Изолинии
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -893,21 +1208,76 @@ export default function MapEditor() {
                       <div className="text-slate-600">Координаты:</div>
                       <div className="font-medium">({selectedPoint.x.toFixed(1)}%, {selectedPoint.y.toFixed(1)}%)</div>
                     </div>
-                    {selectedPoint.waterLevel !== undefined && (
-                      <>
-                        <Separator />
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div className="text-slate-600">А.о. устья:</div>
-                          <div className="font-medium">{selectedPoint.absMouth?.toFixed(1)} м</div>
-                          <div className="text-slate-600">Глубина:</div>
-                          <div className="font-medium">{selectedPoint.depth?.toFixed(1)} м</div>
-                          <div className="text-slate-600">А.о. уровня:</div>
-                          <div className="font-medium text-blue-600">{selectedPoint.waterLevel.toFixed(1)} м</div>
-                        </div>
-                      </>
-                    )}
+                    <Separator />
+                    <div className="grid grid-cols-2 gap-2 text-sm items-center">
+                      <Label htmlFor="manual-water">А.о. уровня, м</Label>
+                      <input
+                        id="manual-water"
+                        type="number"
+                        step="0.1"
+                        value={manualWaterLevel}
+                        onChange={(e) => setManualWaterLevel(e.target.value)}
+                        className="h-8 rounded border px-2 text-sm"
+                        placeholder="например, 84.0"
+                      />
+                      <Label htmlFor="manual-mouth">А.о. устья, м</Label>
+                      <input
+                        id="manual-mouth"
+                        type="number"
+                        step="0.1"
+                        value={manualAbsMouth}
+                        onChange={(e) => setManualAbsMouth(e.target.value)}
+                        className="h-8 rounded border px-2 text-sm"
+                        placeholder="например, 88.3"
+                      />
+                      <Label htmlFor="manual-depth">Глубина, м</Label>
+                      <input
+                        id="manual-depth"
+                        type="number"
+                        step="0.1"
+                        value={manualDepth}
+                        onChange={(e) => setManualDepth(e.target.value)}
+                        className="h-8 rounded border px-2 text-sm"
+                        placeholder="например, 4.3"
+                      />
+                    </div>
+                    <Button size="sm" className="w-full" onClick={applySelectedPointLevels}>Сохранить данные точки</Button>
+                    {manualEditStatus && <p className="text-xs text-slate-600">{manualEditStatus}</p>}
                   </div>
                 ) : <p className="text-slate-500 text-sm">Выберите точку на карте</p>}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-lg">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileUp className="h-5 w-5 text-slate-700" /> Импорт списка высот
+                </CardTitle>
+                <CardDescription>Поддержка CSV/TXT/JSON для пакетного обновления точек</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <textarea
+                  value={bulkHeightsText}
+                  onChange={(e) => setBulkHeightsText(e.target.value)}
+                  rows={7}
+                  className="w-full rounded border p-2 text-xs font-mono"
+                  placeholder={`type,id,waterLevel,absMouth,depth\nborehole,1,84.0,88.3,4.3\nshaft,2,86.4,92.4,6.0\n\nили:\nid,waterLevel\n1,84.0\n2,86.0`}
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1" onClick={() => applyHeightRows(bulkHeightsText)}>Применить список</Button>
+                  <Button variant="outline" size="sm" onClick={() => heightsInputRef.current?.click()}>Импорт файла</Button>
+                </div>
+                <input
+                  ref={heightsInputRef}
+                  type="file"
+                  accept=".csv,.txt,.json,text/plain,application/json"
+                  className="hidden"
+                  onChange={handleHeightsFileImport}
+                />
+                <p className="text-xs text-slate-500">
+                  Если `id` одинаковый у скважины и шурфа, добавьте `type` (`borehole` или `shaft`) для точного попадания.
+                </p>
+                {bulkImportStatus && <p className="text-xs text-slate-700">{bulkImportStatus}</p>}
               </CardContent>
             </Card>
 
@@ -920,7 +1290,7 @@ export default function MapEditor() {
                 <div className="max-h-32 overflow-y-auto space-y-1">
                   {points.length === 0 ? <p className="text-slate-500 text-sm">Нет точек</p> : points.map(point => (
                     <div key={`${point.type}-${point.id}`}
-                      className={`flex items-center justify-between p-2 rounded cursor-pointer hover:bg-slate-50 ${selectedPoint === point ? 'bg-blue-50' : ''}`}
+                      className={`flex items-center justify-between p-2 rounded cursor-pointer hover:bg-slate-50 ${selectedPoint && isSamePoint(selectedPoint, point) ? 'bg-blue-50' : ''}`}
                       onClick={() => setSelectedPoint(point)}>
                       <div className="flex items-center gap-2">
                         <span className={point.type === 'borehole' ? 'text-blue-600' : point.type === 'shaft' ? 'text-green-600' : 'text-yellow-600'}>

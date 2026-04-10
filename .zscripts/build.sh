@@ -9,8 +9,8 @@ set -e
 # 使用 $0 获取脚本路径（兼容 sh 和 bash）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Next.js 项目路径
-NEXTJS_PROJECT_DIR="/home/z/my-project"
+# Next.js 项目路径（默认使用仓库根目录）
+NEXTJS_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # 检查 Next.js 项目目录是否存在
 if [ ! -d "$NEXTJS_PROJECT_DIR" ]; then
@@ -33,11 +33,11 @@ mkdir -p "$BUILD_DIR"
 
 # 安装依赖
 echo "📦 安装依赖..."
-bun install
+npm install
 
 # 构建 Next.js 应用
 echo "🔨 构建 Next.js 应用..."
-bun run build
+npm run build
 
 # 构建 mini-services
 # 检查 Next.js 项目目录下是否有 mini-services 目录
@@ -80,7 +80,7 @@ fi
 # 最后再迁移数据库到 BUILD_DIR/db
 if [ "$(ls -A ./db 2>/dev/null)" ]; then
     echo "🗄️  检测到数据库文件，运行数据库迁移..."
-    DATABASE_URL=file:$BUILD_DIR/db/custom.db bun run db:push
+    DATABASE_URL=file:$BUILD_DIR/db/custom.db npm run db:push
     echo "✅ 数据库迁移完成"
     ls -lah $BUILD_DIR/db
 else
