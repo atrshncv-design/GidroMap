@@ -1,22 +1,53 @@
 # GidroMap
 
-Каноничная версия редактора карты гидроизогипс.
+An interactive editor for **hydroisohypse maps** (groundwater contour lines) — an applied geography research tool built with **Next.js + React + TypeScript**.
 
-Этот репозиторий должен содержать именно текущую версию приложения, чтобы при `git clone`/скачивании архива загружалась именно эта карта и этот набор функций.
+> **Status: experiment** — research tool, not a production service.
 
-## Что входит в текущую версию
+## Features
+
+- Interactive hydroisohypse map editor (Next.js, repo root)
+- Import a scanned map image (PNG/JPG/WEBP, etc.) directly in the UI
+- Manual entry of elevation values at a selected point
+- Batch import of point elevations from CSV/TXT/JSON
+- Contour-line construction (brown), fills, and groundwater flow-direction arrows
+
+## Key files
+
+- `src/app/page.tsx` — editor logic and all tools
+- `public/map-reference.png` — default base map layer
+- `package.json` — build/run scripts
+
+## Local run
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+---
+
+# GidroMap
+
+Интерактивный редактор **карт гидроизогипс** (линий равных отметок уровня грунтовых вод) — прикладной исследовательский инструмент на **Next.js + React + TypeScript**.
+
+> **Статус: experiment** — исследовательский инструмент, не production-сервис.
+
+## Возможности
 
 - Интерактивный редактор карты гидроизогипс (Next.js, корень репозитория)
 - Импорт скана карты (PNG/JPG/WEBP и др.) прямо в интерфейсе
-- Ввод высот по выбранной точке вручную
+- Ручной ввод высот по выбранной точке
 - Пакетный импорт высот точек из CSV/TXT/JSON
 - Построение изолиний (коричневый цвет), заливки и стрелок направления стока
 
-## Ключевые файлы версии
+## Ключевые файлы
 
 - `src/app/page.tsx` — основная логика редактора и всех инструментов
 - `public/map-reference.png` — базовая подложка карты по умолчанию
-- `package.json` — скрипты сборки/запуска для Node.js
+- `package.json` — скрипты сборки/запуска
 
 ## Локальный запуск
 
@@ -25,10 +56,4 @@ npm install
 npm run dev
 ```
 
-Открыть: `http://localhost:3000`
-
-## Важно для публикации
-
-- Деплой выполнять из корня репозитория
-- Не заменять текущую карту/логику на другую версию без нового осознанного обновления
-- Локальные временные файлы и артефакты не включать в Git
+Откройте `http://localhost:3000`.
